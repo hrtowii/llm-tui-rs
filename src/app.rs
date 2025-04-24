@@ -12,12 +12,11 @@ use ratatui::{
 };
 use std::path::PathBuf;
 use tui_markdown::from_str;
-// use std::collections::VecDeque;
 
 pub enum CurrentScreen {
     MainMenu(MainMenu),
     ChatView(ChatView),
-    Settings(Settings),
+    Settings(Config),
     Exit(Exit),
 }
 
@@ -39,13 +38,13 @@ pub struct ChatView {
     pub show_sidebar: bool,
 
     // where we persist them:
-    pub storage_path: std::path::PathBuf,
+    pub storage_path: PathBuf,
     // renaming and creating new chat branches
     pub sidebar_input_mode: Option<SidebarInputMode>,
     pub sidebar_input_buffer: String,
 }
 
-pub struct Settings {
+pub struct Config {
     pub ai_settings: AISettings,
     pub available_models: Vec<String>,
     // fetch the models somehow,
@@ -63,313 +62,331 @@ pub struct Exit {
 // -- Input Handling
 
 impl CurrentScreen {
-    pub async fn on_key(&mut self, key: KeyEvent) {
-        match self {
-            CurrentScreen::MainMenu(menu) => match key.code {
-                KeyCode::Char('j') => {
-                    menu.selected = (menu.selected + 1) % 3;
+    fn handle_main_menu(&mut self, key: KeyEvent) {
+        let CurrentScreen::MainMenu(menu) = self else {
+            return
+        };
+        match key.code {
+            KeyCode::Char('j') => {
+                menu.selected = (menu.selected + 1) % 3;
+            }
+            KeyCode::Char('k') => {
+                menu.selected = menu.selected.checked_sub(1).unwrap_or(2);
+            }
+            KeyCode::Enter => {
+                let storage_path = PathBuf::from("chats.json");
+                let mut branches = ChatBranch::load_all(&storage_path).unwrap();
+                if branches.is_empty() {
+                    branches.push(ChatBranch {
+                        id: 0,
+                        name: "Default Chat".to_string(),
+                        messages: Vec::new(),
+                    });
                 }
-                KeyCode::Char('k') => {
-                    menu.selected = menu.selected.checked_sub(1).unwrap_or(2);
-                }
-                KeyCode::Enter => {
-                    let storage_path = PathBuf::from("chats.json");
-                    let mut branches = ChatBranch::load_all(&storage_path).unwrap();
-                    if branches.is_empty() {
-                        branches.push(ChatBranch {
-                            id: 0,
-                            name: "Default Chat".into(),
-                            messages: Vec::new(),
+                *self = match menu.selected {
+                    0 => {
+                        let mut chat_view = ChatView {
+                            input_buffer: String::new(),
+                            branches,
+                            selected_branch: 0,
+                            show_sidebar: false,
+                            messages: Some(Vec::new()),
+                            storage_path,
+                            sidebar_input_mode: None,
+                            sidebar_input_buffer: String::new(),
+                        };
+                        // load messages for selected branch
+                        chat_view.messages = Some(
+                            chat_view.branches[chat_view.selected_branch]
+                                .messages.clone()
+                        );
+                        CurrentScreen::ChatView(chat_view)
+                    }
+                    1 => {
+                        let storage_path = PathBuf::from("settings.json");
+                        let settings =
+                            AISettings::load_all(&storage_path).unwrap_or(AISettings {
+                                backend: AIBackend::OpenAI,
+                                model: "gpt-3.5-turbo".to_string(),
+                                api_key: None,
+                                temperature: 0.7,
+                                max_tokens: 2048,
+                            });
+                        CurrentScreen::Settings(Config {
+                            ai_settings: settings,
+                            available_models: vec![String::new()], // fetch the models somehow,
+                            selected_field: 0,
+                            temp_input: String::new(),
+                            tokens_input: String::new(),
                         })
                     }
-                    *self = match menu.selected {
-                        0 => {
-                            let mut chat_view = ChatView {
-                                input_buffer: String::new(),
-                                branches,
-                                selected_branch: 0,
-                                show_sidebar: false,
-                                messages: Some(Vec::new()),
-                                storage_path,
-                                sidebar_input_mode: None,
-                                sidebar_input_buffer: String::new(),
-                            };
-                            // load messages for selected branch
-                            chat_view.messages = Some(
-                                chat_view.branches[chat_view.selected_branch]
-                                    .messages
-                                    .clone(),
-                            );
-                            CurrentScreen::ChatView(chat_view)
-                        }
-                        1 => {
-                            let storage_path = PathBuf::from("settings.json");
-                            let settings =
-                                AISettings::load_all(&storage_path).unwrap_or(AISettings {
-                                    backend: AIBackend::OpenAI,
-                                    model: "gpt-3.5-turbo".to_string(),
-                                    api_key: None,
-                                    temperature: 0.7,
-                                    max_tokens: 2048,
-                                });
-                            CurrentScreen::Settings(Settings {
-                                ai_settings: settings,
-                                available_models: vec![String::new()], // fetch the models somehow,
-                                selected_field: 0,
-                                temp_input: String::new(),
-                                tokens_input: String::new(),
-                            })
-                        }
-                        _ => CurrentScreen::Exit(Exit {
-                            data: "Bye!".into(),
-                        }),
-                    };
+                    _ => CurrentScreen::Exit(Exit {
+                        data: "Bye!".to_string(),
+                    }),
                 }
-                _ => {}
             },
-            CurrentScreen::ChatView(chat) => {
-                let storage_path = PathBuf::from("settings.json");
-                let settings = AISettings::load_all(&storage_path).unwrap_or(AISettings {
-                    backend: AIBackend::OpenAI,
-                    model: "gpt-3.5-turbo".to_string(),
-                    api_key: None,
-                    temperature: 0.7,
-                    max_tokens: 2048,
-                }); // sidebar selection
-                if chat.show_sidebar {
-                    if let Some(input_mode) = &mut chat.sidebar_input_mode {
-                        // Handle input for renaming or new branch
-                        match key.code {
-                            KeyCode::Enter => {
-                                let new_name = chat.sidebar_input_buffer.trim();
-                                if !new_name.is_empty() {
-                                    match input_mode {
-                                        SidebarInputMode::NewBranch => {
-                                            // Create new branch with custom name
-                                            let new_branch = ChatBranch {
-                                                id: chat.branches.len() as usize,
-                                                name: new_name.to_string(),
-                                                messages: Vec::new(),
-                                            };
-                                            chat.branches.push(new_branch);
-                                            chat.selected_branch = chat.branches.len() - 1;
-                                            chat.messages = Some(Vec::new());
-                                            let _ = ChatBranch::save_all(
-                                                &chat.storage_path,
-                                                &chat.branches,
-                                            );
-                                        }
-                                        SidebarInputMode::Renaming => {
-                                            // Rename selected branch
-                                            if let Some(branch) =
-                                                chat.branches.get_mut(chat.selected_branch)
-                                            {
-                                                branch.name = new_name.to_string();
-                                                let _ = ChatBranch::save_all(
-                                                    &chat.storage_path,
-                                                    &chat.branches,
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                // Reset input mode
-                                chat.sidebar_input_mode = None;
-                                chat.sidebar_input_buffer.clear();
-                            }
-                            KeyCode::Char(c) => chat.sidebar_input_buffer.push(c),
-                            KeyCode::Backspace => {
-                                chat.sidebar_input_buffer.pop();
-                            }
-                            KeyCode::Esc => {
-                                chat.sidebar_input_mode = None;
-                                chat.sidebar_input_buffer.clear();
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        // sidebar is active: j/k/Enter/Esc/n
-                        match key.code {
-                            KeyCode::Char('j') => {
-                                chat.selected_branch =
-                                    (chat.selected_branch + 1) % chat.branches.len();
-                            }
-                            KeyCode::Char('k') => {
-                                chat.selected_branch = chat
-                                    .selected_branch
-                                    .checked_sub(1)
-                                    .unwrap_or(chat.branches.len() - 1);
-                            }
-                            KeyCode::Enter => {
-                                // switch to that chat branch
-                                chat.messages =
-                                    Some(chat.branches[chat.selected_branch].messages.clone());
-                                chat.show_sidebar = false;
-                            }
-                            KeyCode::Char('n') => {
-                                chat.sidebar_input_mode = Some(SidebarInputMode::NewBranch);
-                                chat.sidebar_input_buffer.clear();
-                            }
-                            KeyCode::Char('r') => {
-                                // Start renaming (if branches exist)
-                                if !chat.branches.is_empty() {
-                                    chat.sidebar_input_mode = Some(SidebarInputMode::Renaming);
-                                    chat.sidebar_input_buffer =
-                                        chat.branches[chat.selected_branch].name.clone();
-                                }
-                            }
-                            KeyCode::Tab | KeyCode::Esc => {
-                                chat.show_sidebar = false;
-                            }
-                            _ => {}
-                        }
-                        return;
-                    }
-                }
+            _ => {}
+        }
+    }
 
-                // normal chat view
-                match key.code {
-                    KeyCode::Tab => {
-                        // toggle sidebar
-                        chat.show_sidebar = true;
+    fn handle_settings(&mut self, key: KeyEvent) {
+        let CurrentScreen::Settings(settings) = self else {
+            return
+        };
+        match key.code {
+            KeyCode::Up => {
+                settings.selected_field = settings.selected_field.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                settings.selected_field = (settings.selected_field + 1) % 5;
+            }
+            KeyCode::Left | KeyCode::Right if settings.selected_field == 0 => {
+                // Cycle through backend options
+                let backend = &mut settings.ai_settings.backend;
+                *backend = match (&backend, key.code) {
+                    (_, KeyCode::Left) => match backend {
+                        AIBackend::OpenAI => AIBackend::Phind,
+                        AIBackend::Anthropic => AIBackend::OpenAI,
+                        AIBackend::Google => AIBackend::Anthropic,
+                        AIBackend::Groq => AIBackend::Google,
+                        AIBackend::Ollama => AIBackend::Groq,
+                        AIBackend::XAi => AIBackend::Ollama,
+                        AIBackend::Phind => AIBackend::XAi,
+                    },
+                    _ => match backend {
+                        AIBackend::OpenAI => AIBackend::Anthropic,
+                        AIBackend::Anthropic => AIBackend::Google,
+                        AIBackend::Google => AIBackend::Groq,
+                        AIBackend::Groq => AIBackend::Ollama,
+                        AIBackend::Ollama => AIBackend::XAi,
+                        AIBackend::XAi => AIBackend::Phind,
+                        AIBackend::Phind => AIBackend::OpenAI,
                     }
-                    KeyCode::Char(c) => {
-                        if !chat.show_sidebar {
-                            chat.input_buffer.push(c);
-                        }
-                    }
-                    KeyCode::Backspace => {
-                        chat.input_buffer.pop();
-                    }
-                    KeyCode::Enter => {
-                        if !chat.show_sidebar {
-                            let user_input = chat.input_buffer.trim();
-                            if !user_input.is_empty() {
-                                chat.messages.as_mut().unwrap().push(Message {
-                                    role: Role::User,
-                                    content: user_input.to_string(),
-                                });
-                                match run_ai(chat.messages.clone(), user_input, &settings).await {
-                                    Ok(reply) => {
-                                        chat.messages.as_mut().unwrap().push(Message {
-                                            role: Role::Assistant,
-                                            content: reply,
-                                        });
-                                    }
-                                    Err(e) => {
-                                        chat.messages.as_mut().unwrap().push(Message {
-                                            role: Role::Assistant,
-                                            content: format!("AI Error: {}", e),
-                                        });
-                                    }
-                                }
-                                // persist back to branch
-                                if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
-                                    branch.messages = chat.messages.as_mut().unwrap().clone();
-                                    // idk how to make this behavior tbh
-                                    if branch.name == "Default Chat" || branch.name.is_empty() {
-                                        if let Ok(new_title) = generate_chat_title(
-                                            Some(branch.messages.clone()),
-                                            &settings,
-                                        )
-                                        .await
-                                        {
-                                            branch.name = new_title;
-                                        }
-                                    }
-                                }
-
-                                let _ = ChatBranch::save_all(&chat.storage_path, &chat.branches);
-                                // Clear input
-                                chat.input_buffer.clear();
-                                // Optionally scroll up if too many
-                                // if chat.messages.len() > 100 {
-                                //     chat.messages.pop_front();
-                                // }
-                            }
-                        }
-                    }
-                    KeyCode::Esc => {
-                        *self = CurrentScreen::MainMenu(MainMenu { selected: 0 });
-                    }
+                };
+                AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
+                    .ok();
+            }
+            KeyCode::Char(c) => {
+                match settings.selected_field {
+                    1 => settings.ai_settings.model.push(c),
+                    2 => settings
+                        .ai_settings
+                        .api_key
+                        .get_or_insert(String::new())
+                        .push(c),
+                    3 => settings.temp_input.push(c),
+                    4 => settings.tokens_input.push(c),
                     _ => {}
                 }
+                // Update actual settings when valid
+                if settings.selected_field == 3 {
+                    if let Ok(temp) = settings.temp_input.parse() {
+                        settings.ai_settings.temperature = temp;
+                    }
+                }
+                if settings.selected_field == 4 {
+                    if let Ok(tokens) = settings.tokens_input.parse() {
+                        settings.ai_settings.max_tokens = tokens;
+                    }
+                }
+                AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
+                    .ok();
             }
-            CurrentScreen::Settings(settings) => match key.code {
-                KeyCode::Up => {
-                    settings.selected_field = settings.selected_field.saturating_sub(1);
+            KeyCode::Backspace => {
+                match settings.selected_field {
+                    1 => _ = settings.ai_settings.model.pop(),
+                    2 => _ = settings.ai_settings.api_key.as_mut().and_then(String::pop),
+                    3 => _ = settings.temp_input.pop(),
+                    4 => _ = settings.tokens_input.pop(),
+                    _ => {}
                 }
-                KeyCode::Down => {
-                    settings.selected_field = (settings.selected_field + 1) % 5;
-                }
-                KeyCode::Left | KeyCode::Right if settings.selected_field == 0 => {
-                    // Cycle through backend options
-                    let backend = &mut settings.ai_settings.backend;
-                    *backend = match (&backend, key.code) {
-                        (_, KeyCode::Left) => match backend {
-                            AIBackend::OpenAI => AIBackend::Phind,
-                            AIBackend::Anthropic => AIBackend::OpenAI,
-                            AIBackend::Google => AIBackend::Anthropic,
-                            AIBackend::Groq => AIBackend::Google,
-                            AIBackend::Ollama => AIBackend::Groq,
-                            AIBackend::XAi => AIBackend::Ollama,
-                            AIBackend::Phind => AIBackend::XAi,
-                        },
-                        _ => match backend {
-                            AIBackend::OpenAI => AIBackend::Anthropic,
-                            AIBackend::Anthropic => AIBackend::Google,
-                            AIBackend::Google => AIBackend::Groq,
-                            AIBackend::Groq => AIBackend::Ollama,
-                            AIBackend::Ollama => AIBackend::XAi,
-                            AIBackend::XAi => AIBackend::Phind,
-                            AIBackend::Phind => AIBackend::OpenAI,
-                        },
-                    };
-                    AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
-                        .ok();
-                }
-                KeyCode::Char(c) => {
-                    match settings.selected_field {
-                        1 => settings.ai_settings.model.push(c),
-                        2 => settings
-                            .ai_settings
-                            .api_key
-                            .get_or_insert(String::new())
-                            .push(c),
-                        3 => settings.temp_input.push(c),
-                        4 => settings.tokens_input.push(c),
-                        _ => {}
-                    }
-                    // Update actual settings when valid
-                    if settings.selected_field == 3 {
-                        if let Ok(temp) = settings.temp_input.parse() {
-                            settings.ai_settings.temperature = temp;
+                AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
+                    .ok();
+            }
+            KeyCode::Esc => {
+                *self = CurrentScreen::MainMenu(MainMenu { selected: 0 });
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_chat_view_sidebar(chat: &mut ChatView, key: KeyEvent) -> bool {
+        if let Some(input_mode) = &mut chat.sidebar_input_mode {
+            // Handle input for renaming or new branch
+            match key.code {
+                KeyCode::Enter => {
+                    let new_name = chat.sidebar_input_buffer.trim();
+                    if !new_name.is_empty() {
+                        match input_mode {
+                            SidebarInputMode::NewBranch => {
+                                // Create new branch with custom name
+                                let new_branch = ChatBranch {
+                                    id: chat.branches.len(),
+                                    name: new_name.to_string(),
+                                    messages: Vec::new(),
+                                };
+                                chat.branches.push(new_branch);
+                                chat.selected_branch = chat.branches.len() - 1;
+                                chat.messages = Some(Vec::new());
+                                ChatBranch::save_all(
+                                    &chat.storage_path,
+                                    &chat.branches,
+                                ).unwrap();
+                            }
+                            SidebarInputMode::Renaming => {
+                                // Rename selected branch
+                                if let Some(branch) =
+                                    chat.branches.get_mut(chat.selected_branch)
+                                {
+                                    branch.name = new_name.to_string();
+                                    ChatBranch::save_all(
+                                        &chat.storage_path,
+                                        &chat.branches,
+                                    ).unwrap();
+                                }
+                            }
                         }
                     }
-                    if settings.selected_field == 4 {
-                        if let Ok(tokens) = settings.tokens_input.parse() {
-                            settings.ai_settings.max_tokens = tokens;
-                        }
-                    }
-                    AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
-                        .ok();
+                    // Reset input mode
+                    chat.sidebar_input_mode = None;
+                    chat.sidebar_input_buffer.clear();
                 }
+                KeyCode::Char(c) => chat.sidebar_input_buffer.push(c),
                 KeyCode::Backspace => {
-                    match settings.selected_field {
-                        1 => _ = settings.ai_settings.model.pop(),
-                        2 => _ = settings.ai_settings.api_key.as_mut().and_then(|k| k.pop()),
-                        3 => _ = settings.temp_input.pop(),
-                        4 => _ = settings.tokens_input.pop(),
-                        _ => {}
-                    }
-                    AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
-                        .ok();
+                    chat.sidebar_input_buffer.pop();
                 }
                 KeyCode::Esc => {
-                    *self = CurrentScreen::MainMenu(MainMenu { selected: 0 });
+                    chat.sidebar_input_mode = None;
+                    chat.sidebar_input_buffer.clear();
                 }
                 _ => {}
-            },
+            }
+            false
+        } else {
+            // sidebar is active: j/k/Enter/Esc/n
+            match key.code {
+                KeyCode::Char('j') => {
+                    chat.selected_branch =
+                        (chat.selected_branch + 1) % chat.branches.len();
+                }
+                KeyCode::Char('k') => {
+                    chat.selected_branch = chat
+                        .selected_branch
+                        .checked_sub(1)
+                        .unwrap_or(chat.branches.len() - 1);
+                }
+                KeyCode::Enter => {
+                    // switch to that chat branch
+                    chat.messages = Some( // clone, otherwise we get a self-referential struct
+                        chat.branches[chat.selected_branch].messages.clone()
+                    );
+                    chat.show_sidebar = false;
+                }
+                KeyCode::Char('n') => {
+                    chat.sidebar_input_mode = Some(SidebarInputMode::NewBranch);
+                    chat.sidebar_input_buffer.clear();
+                }
+                KeyCode::Char('r') => {
+                    // Start renaming (if branches exist)
+                    if !chat.branches.is_empty() {
+                        chat.sidebar_input_mode = Some(SidebarInputMode::Renaming);
+                        chat.sidebar_input_buffer =
+                            chat.branches[chat.selected_branch].name.to_string();
+                    }
+                }
+                KeyCode::Tab | KeyCode::Esc => {
+                    chat.show_sidebar = false;
+                }
+                _ => {}
+            }
+            true
+        }
+    }
+
+    async fn handle_chat_view(&mut self, key: KeyEvent) {
+        let CurrentScreen::ChatView(chat) = self else {
+            return
+        };
+        let storage_path = PathBuf::from("settings.json");
+        let settings = AISettings::load_all(&storage_path).unwrap_or(AISettings {
+            backend: AIBackend::OpenAI,
+            model: "gpt-3.5-turbo".to_string(),
+            api_key: None,
+            temperature: 0.7,
+            max_tokens: 2048,
+        }); // sidebar selection
+        if chat.show_sidebar && Self::handle_chat_view_sidebar(chat, key) {
+            return;
+        }
+
+        // normal chat view
+        match key.code {
+            KeyCode::Tab => {
+                // toggle sidebar
+                chat.show_sidebar = true;
+            }
+            KeyCode::Char(c) => {
+                if !chat.show_sidebar {
+                    chat.input_buffer.push(c);
+                }
+            }
+            KeyCode::Backspace => {
+                chat.input_buffer.pop();
+            }
+            KeyCode::Enter => {
+                if !chat.show_sidebar {
+                    let user_input = chat.input_buffer.trim();
+                    if !user_input.is_empty() {
+                        chat.messages.as_mut().unwrap().push(Message {
+                            role: Role::User,
+                            content: user_input.to_string(),
+                        });
+                        let content = match run_ai(chat.messages.as_deref(), user_input, &settings).await {
+                            Ok(reply) => reply,
+                            Err(e) => format!("AI Error: {e}")
+                        };
+                        chat.messages.as_mut().unwrap().push(
+                            Message {
+                                role: Role::Assistant,
+                                content
+                            }
+                        );
+                        // persist back to branch
+                        if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
+                            branch.messages = chat.messages.as_deref().unwrap().to_vec();
+                            // idk how to make this behavior tbh
+                            if branch.name == "Default Chat" || branch.name.is_empty() {
+                                if let Ok(new_title) = generate_chat_title(
+                                    Some(&branch.messages),
+                                    &settings,
+                                ).await {
+                                    branch.name = new_title;
+                                }
+                            }
+                        }
+
+                        ChatBranch::save_all(&chat.storage_path, &chat.branches).unwrap();
+                        // Clear input
+                        chat.input_buffer.clear();
+                        // Optionally scroll up if too many
+                        // if chat.messages.len() > 100 {
+                        //     chat.messages.pop_front();
+                        // }
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                *self = CurrentScreen::MainMenu(MainMenu { selected: 0 });
+            }
+            _ => {}
+        }
+    }
+
+    pub async fn on_key(&mut self, key: KeyEvent) {
+        match self {
+            CurrentScreen::MainMenu(_) => self.handle_main_menu(key),
+            CurrentScreen::ChatView(_) => self.handle_chat_view(key).await,
+            CurrentScreen::Settings(_) => self.handle_settings(key),
             CurrentScreen::Exit(_) => {}
         }
     }
@@ -391,13 +408,13 @@ impl Widget for &MainMenu {
             .enumerate()
             .map(|(idx, label)| {
                 let prefix = if idx == self.selected { ">>" } else { "  " };
-                Line::from(Span::raw(format!("{} {}", prefix, label)))
+                Line::from(Span::raw(format!("{prefix} {label}")))
             })
             .collect();
 
         // 3) Create a Paragraph from those lines, add a border/title, and render it.
         render_to(
-            r"/Users/ibarahime/dev/llm-tui-rs/src/wingedstrawberry.png",
+            r"wingedstrawberry.png",
             &mut buffer,
             &RenderOptions::new().width(50).colored(false), // .charset(&[".", ",", "-", "*", "£", "$", "#"]),
         )
@@ -406,6 +423,44 @@ impl Widget for &MainMenu {
         // Paragraph::new(buffer).render(area, buf);
     }
 }
+
+fn iter_messages<'a>(messages: &'a [Message], lines: &mut Vec<Line<'a>>) {
+    for msg in messages {
+        let prefix = match msg.role {
+            Role::User => Span::styled(
+                "You: ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Role::Assistant => Span::styled(
+                "Assistant: ",
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        };
+
+        let markdown = from_str(&msg.content);
+        // idk how this works but i like deepseek
+        // Text contains Lines which contains Spans, so loop through the lines and add the spans to the string.
+        for (i, line) in markdown.lines.into_iter().enumerate() {
+            let mut spans = Vec::with_capacity(line.spans.len() + 1);
+
+            // Add prefix only to the first line
+            if i == 0 {
+                spans.push(prefix.clone());
+            } else {
+                // Add indentation for wrapped lines
+                spans.push(Span::from("".repeat(prefix.width())));
+            }
+
+            spans.extend(line.spans);
+            lines.push(Line::from(spans));
+        }
+    }
+}
+
 impl Widget for &ChatView {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Layout:  [messages box]
@@ -478,47 +533,14 @@ impl Widget for &ChatView {
         // Message area: render each message as one line, distinguishing User/AI
         let mut lines = Vec::new();
         if let Some(messages) = &self.messages {
-            for msg in messages {
-                let prefix = match msg.role {
-                    Role::User => Span::styled(
-                        "You: ",
-                        Style::default()
-                            .fg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Role::Assistant => Span::styled(
-                        "Assistant: ",
-                        Style::default()
-                            .fg(Color::Blue)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                };
-
-                let markdown = from_str(&msg.content);
-                // idk how this works but i like deepseek
-                // Text contains Lines which contains Spans, so loop through the lines and add the spans to the string.
-                for (i, line) in markdown.lines.into_iter().enumerate() {
-                    let mut spans = Vec::with_capacity(line.spans.len() + 1);
-
-                    // Add prefix only to the first line
-                    if i == 0 {
-                        spans.push(prefix.clone());
-                    } else {
-                        // Add indentation for wrapped lines
-                        spans.push(Span::from("".repeat(prefix.width())));
-                    }
-
-                    spans.extend(line.spans);
-                    lines.push(Line::from(spans));
-                }
-            }
+            iter_messages(messages, &mut lines);
         }
 
         Paragraph::new(lines)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(self.branches[self.selected_branch].name.clone()),
+                    .title(self.branches[self.selected_branch].name.as_str()),
             )
             .wrap(ratatui::widgets::Wrap { trim: false })
             .scroll((
@@ -547,9 +569,9 @@ impl Widget for &ChatView {
     }
 }
 
-impl Widget for &Settings {
+impl Widget for &Config {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let fields = vec![
+        let fields = [
             format!("Backend: {:?}", self.ai_settings.backend),
             format!("Model: {}", self.ai_settings.model),
             format!(
@@ -557,7 +579,7 @@ impl Widget for &Settings {
                 self.ai_settings.api_key.as_deref().unwrap_or("<none>")
             ),
             format!("Temperature: {}", self.temp_input),
-            format!("Max Tokens: {}", self.tokens_input),
+            format!("Max Tokens: {}", self.tokens_input)
         ];
 
         let items: Vec<Line> = fields
@@ -608,7 +630,7 @@ impl Widget for &CurrentScreen {
             CurrentScreen::MainMenu(screen) => screen.render(content_area, buf),
             CurrentScreen::ChatView(screen) => screen.render(content_area, buf),
             CurrentScreen::Settings(screen) => screen.render(content_area, buf),
-            CurrentScreen::Exit(..) => (),
+            CurrentScreen::Exit(_) => (),
         }
     }
 }

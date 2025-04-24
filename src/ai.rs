@@ -14,7 +14,7 @@ use llm::{
 };
 
 pub async fn run_ai(
-    chat_history: Option<Vec<Message>>,
+    chat_history: Option<&[Message]>,
     prompt: &str,
     settings: &AISettings,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -44,13 +44,13 @@ pub async fn run_ai(
             AIBackend::Groq => api_key_string = "GROQ_API_KEY",
             AIBackend::Ollama => {
                 builder = builder.base_url(
-                    &std::env::var("OLLAMA_URL").unwrap_or("http://127.0.0.1:11434".into()),
+                    std::env::var("OLLAMA_URL").unwrap_or("http://127.0.0.1:11434".into()),
                 );
                 api_key_string = "OLLAMA_URL";
             }
             AIBackend::XAi => api_key_string = "XAI_API_KEY",
             // AIBackend::Phind => api_key_string = "ANTHROPIC_API_KEY",
-            _ => api_key_string = "",
+            AIBackend::Phind => api_key_string = "",
         }
         builder = builder.api_key(std::env::var(api_key_string).unwrap_or(String::new()));
     }
@@ -65,11 +65,13 @@ pub async fn run_ai(
     // for loop through the chat_history vec if it exists, chat_history[x].role => user() / assistant(), .message -> pass to .content()
 
     if let Some(history) = chat_history {
-        for message in &history {
+        for message in history {
             let chat_msg = match message.role {
-                Role::User => ChatMessage::user().content(message.content.clone()).build(),
+                Role::User => ChatMessage::user()
+                    .content(&message.content)
+                    .build(),
                 Role::Assistant => ChatMessage::assistant()
-                    .content(message.content.clone())
+                    .content(&message.content)
                     .build(),
             };
             messages.push(chat_msg);
@@ -77,14 +79,14 @@ pub async fn run_ai(
         messages.push(ChatMessage::user().content(prompt).build());
     }
 
-    match llm.chat(&messages).await {
-        Ok(text) => Ok(text.to_string()),
-        Err(e) => Ok(e.to_string()),
-    }
+    llm.chat(&messages)
+        .await
+        .map(|x| x.to_string())
+        .map_err(Into::into)
 }
 
 pub async fn generate_chat_title(
-    chat_history: Option<Vec<Message>>,
+    chat_history: Option<&[Message]>,
     settings: &AISettings,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let prompt = "Given our past conversation, come up with an appropriate short title / topic for it. Just give the title, nothing else.";

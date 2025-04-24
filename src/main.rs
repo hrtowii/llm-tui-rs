@@ -1,3 +1,6 @@
+#![warn(clippy::all, clippy::pedantic)]
+#![allow(clippy::cast_possible_truncation)]
+
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{DefaultTerminal, Frame};
@@ -11,7 +14,7 @@ use app::MainMenu;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    color_eyre::install();
+    color_eyre::install()?;
     let terminal = ratatui::init();
     let result = run(terminal).await;
     ratatui::restore();
@@ -33,5 +36,5 @@ async fn run(mut terminal: DefaultTerminal) -> Result<()> {
 }
 
 fn render(frame: &mut Frame, current_screen: &CurrentScreen) {
-    frame.render_widget(current_screen, frame.size());
+    frame.render_widget(current_screen, frame.area());
 }

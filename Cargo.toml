@@ -1,0 +1,26 @@
+[package]
+name = "llm-tui-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+color-eyre = "0.6.3"
+crossterm = "0.29.0"
+ratatui = "0.29.0"
+chrono = "0.4"
+tui-markdown = "0.3.3"
+tokio = { version = "1", features = ["full"] }
+llm = { version = "1.0.4", features = [
+    "openai",
+    "anthropic",
+    "ollama",
+    "deepseek",
+    "xai",
+    "phind",
+    "google",
+    "groq",
+] }
+rascii_art = "0.4.5"
+serde = "1.0.219"
+anyhow = "1.0.98"
+serde_json = "1.0.140"

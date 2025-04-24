@@ -5,11 +5,11 @@
     "messages": [
       {
         "role": "User",
-        "content": "hello"
+        "content": "what model are you?"
       },
       {
         "role": "Assistant",
-        "content": "Hello there! 😊 How can I help you today?"
+        "content": "HTTP Error: HTTP status client error (404 Not Found) for url (https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-2.0:generateContent?key=AIzaSyAH7U_ZHgle6H0byUBsSi7ViSaK8vd79dc)"
       },
       {
         "role": "User",
@@ -17,105 +17,15 @@
       },
       {
         "role": "Assistant",
-        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
+        "content": "GoogleChatResponse { candidates: [GoogleCandidate { content: GoogleResponseContent { parts: [GoogleResponsePart { text: \"Hello there! How can I help you today? 😊\\n\", function_call: None }], function_call: None, function_calls: None } }] }"
       },
       {
         "role": "User",
-        "content": "what model are you"
+        "content": "what model are you?"
       },
       {
         "role": "Assistant",
-        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
-      }
-    ]
-  },
-  {
-    "id": 1,
-    "name": "pooping Chat",
-    "messages": [
-      {
-        "role": "User",
-        "content": "hello"
-      },
-      {
-        "role": "Assistant",
-        "content": "Hello there! 😊 How can I help you today?"
-      },
-      {
-        "role": "User",
-        "content": "hello"
-      },
-      {
-        "role": "Assistant",
-        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
-      },
-      {
-        "role": "User",
-        "content": "what model are you"
-      },
-      {
-        "role": "Assistant",
-        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
-      }
-    ]
-  },
-  {
-    "id": 2,
-    "name": "pissing Chat",
-    "messages": [
-      {
-        "role": "User",
-        "content": "hello"
-      },
-      {
-        "role": "Assistant",
-        "content": "Hello there! 😊 How can I help you today?"
-      },
-      {
-        "role": "User",
-        "content": "hello"
-      },
-      {
-        "role": "Assistant",
-        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
-      },
-      {
-        "role": "User",
-        "content": "what model are you"
-      },
-      {
-        "role": "Assistant",
-        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
-      }
-    ]
-  },
-  {
-    "id": 3,
-    "name": "meowing] Chat",
-    "messages": [
-      {
-        "role": "User",
-        "content": "hello"
-      },
-      {
-        "role": "Assistant",
-        "content": "Hello there! 😊 How can I help you today?"
-      },
-      {
-        "role": "User",
-        "content": "hello"
-      },
-      {
-        "role": "Assistant",
-        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
-      },
-      {
-        "role": "User",
-        "content": "what model are you"
-      },
-      {
-        "role": "Assistant",
-        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
+        "content": "GoogleChatResponse { candidates: [GoogleCandidate { content: GoogleResponseContent { parts: [GoogleResponsePart { text: \"I am a large language model, trained by Google.\\n\", function_call: None }], function_call: None, function_calls: None } }] }"
       }
     ]
   }

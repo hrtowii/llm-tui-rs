@@ -1,4 +1,5 @@
 use crate::chat_structs::Message;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::Path};
 
@@ -10,7 +11,7 @@ pub struct ChatBranch {
 }
 
 impl ChatBranch {
-    pub fn load_all(path: &Path) -> anyhow::Result<Vec<ChatBranch>> {
+    pub fn load_all(path: &Path) -> Result<Vec<ChatBranch>> {
         if !path.exists() {
             // create empty file
             let mut f = fs::File::create(path)?;
@@ -21,7 +22,7 @@ impl ChatBranch {
         Ok(branches)
     }
 
-    pub fn save_all(path: &Path, branches: &Vec<ChatBranch>) -> anyhow::Result<()> {
+    pub fn save_all(path: &Path, branches: &Vec<ChatBranch>) -> Result<()> {
         let s = serde_json::to_string_pretty(branches)?;
         fs::write(path, s)?;
         Ok(())

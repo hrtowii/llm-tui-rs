@@ -2,7 +2,6 @@ use crate::ai::run_ai;
 use crate::ai_backend::{AIBackend, AISettings};
 use crate::chat_branch::ChatBranch;
 use crate::chat_structs::{Message, Role};
-use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::{
@@ -11,6 +10,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
 };
+use std::path::PathBuf;
 // use std::collections::VecDeque;
 
 pub enum CurrentScreen {
@@ -25,6 +25,7 @@ pub struct MainMenu {
 }
 
 pub struct ChatView {
+    pub title: String,
     pub messages: Option<Vec<Message>>,
     pub input_buffer: String,
     // the sidebar fields:
@@ -38,9 +39,13 @@ pub struct ChatView {
 
 pub struct Settings {
     pub ai_settings: AISettings,
-    pub available_models: Vec<String>, // fetch the models somehow,
-                                       // maybe v1/models but for every API? so each backend has to have a
-                                       // model_api field
+    pub available_models: Vec<String>,
+    // fetch the models somehow,
+    // maybe v1/models but for every API? so each backend has to have a
+    // model_api field
+    pub selected_field: usize, // Track which setting is selected
+    temp_input: String,        // Temporary buffer for temperature input
+    tokens_input: String,      // Temporary buffer for max_tokens
 }
 
 pub struct Exit {
@@ -60,7 +65,7 @@ impl CurrentScreen {
                     menu.selected = menu.selected.checked_sub(1).unwrap_or(2);
                 }
                 KeyCode::Enter => {
-                    let storage_path = std::path::PathBuf::from("chats.json");
+                    let storage_path = PathBuf::from("chats.json");
                     let mut branches = ChatBranch::load_all(&storage_path).unwrap();
                     if branches.is_empty() {
                         branches.push(ChatBranch {
@@ -72,6 +77,7 @@ impl CurrentScreen {
                     *self = match menu.selected {
                         0 => {
                             let mut chat_view = ChatView {
+                                title: "New Chat".to_string(),
                                 input_buffer: String::new(),
                                 branches,
                                 selected_branch: 0,
@@ -87,16 +93,24 @@ impl CurrentScreen {
                             );
                             CurrentScreen::ChatView(chat_view)
                         }
-                        1 => CurrentScreen::Settings(Settings {
-                            ai_settings: AISettings {
-                                backend: AIBackend::OpenAI,
-                                model: "gpt-3.5-turbo".to_string(),
-                                api_key: None,
-                                temperature: 0.7,
-                                max_tokens: 1000,
-                            },
-                            available_models: vec![String::new()], // fetch the models somehow,
-                        }),
+                        1 => {
+                            let storage_path = PathBuf::from("settings.json");
+                            let settings =
+                                AISettings::load_all(&storage_path).unwrap_or(AISettings {
+                                    backend: AIBackend::OpenAI,
+                                    model: "gpt-3.5-turbo".to_string(),
+                                    api_key: None,
+                                    temperature: 0.7,
+                                    max_tokens: 2048,
+                                });
+                            CurrentScreen::Settings(Settings {
+                                ai_settings: settings,
+                                available_models: vec![String::new()], // fetch the models somehow,
+                                selected_field: 0,
+                                temp_input: String::new(),
+                                tokens_input: String::new(),
+                            })
+                        }
                         _ => CurrentScreen::Exit(Exit {
                             data: "Bye!".into(),
                         }),
@@ -105,7 +119,14 @@ impl CurrentScreen {
                 _ => {}
             },
             CurrentScreen::ChatView(chat) => {
-                // sidebar selection
+                let storage_path = PathBuf::from("settings.json");
+                let settings = AISettings::load_all(&storage_path).unwrap_or(AISettings {
+                    backend: AIBackend::OpenAI,
+                    model: "gpt-3.5-turbo".to_string(),
+                    api_key: None,
+                    temperature: 0.7,
+                    max_tokens: 2048,
+                }); // sidebar selection
                 if chat.show_sidebar {
                     // sidebar is active: j/k/Enter/Esc
                     match key.code {
@@ -134,7 +155,7 @@ impl CurrentScreen {
 
                 // normal chat view
                 match key.code {
-                    KeyCode::Char('u') => {
+                    KeyCode::Tab => {
                         // toggle sidebar
                         chat.show_sidebar = true;
                     }
@@ -151,7 +172,7 @@ impl CurrentScreen {
                                 role: Role::User,
                                 content: user_input.to_string(),
                             });
-                            match run_ai(chat.messages.clone(), user_input).await {
+                            match run_ai(chat.messages.clone(), user_input, &settings).await {
                                 Ok(reply) => {
                                     chat.messages.as_mut().unwrap().push(Message {
                                         role: Role::Assistant,
@@ -185,7 +206,76 @@ impl CurrentScreen {
                 }
             }
             CurrentScreen::Settings(settings) => match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => {
+                KeyCode::Up => {
+                    settings.selected_field = settings.selected_field.saturating_sub(1);
+                }
+                KeyCode::Down => {
+                    settings.selected_field = (settings.selected_field + 1) % 5;
+                }
+                KeyCode::Left | KeyCode::Right if settings.selected_field == 0 => {
+                    // Cycle through backend options
+                    let backend = &mut settings.ai_settings.backend;
+                    *backend = match (&backend, key.code) {
+                        (_, KeyCode::Left) => match backend {
+                            AIBackend::OpenAI => AIBackend::Phind,
+                            AIBackend::Anthropic => AIBackend::OpenAI,
+                            AIBackend::Google => AIBackend::Anthropic,
+                            AIBackend::Groq => AIBackend::Google,
+                            AIBackend::Ollama => AIBackend::Groq,
+                            AIBackend::XAi => AIBackend::Ollama,
+                            AIBackend::Phind => AIBackend::XAi,
+                        },
+                        _ => match backend {
+                            AIBackend::OpenAI => AIBackend::Anthropic,
+                            AIBackend::Anthropic => AIBackend::Google,
+                            AIBackend::Google => AIBackend::Groq,
+                            AIBackend::Groq => AIBackend::Ollama,
+                            AIBackend::Ollama => AIBackend::XAi,
+                            AIBackend::XAi => AIBackend::Phind,
+                            AIBackend::Phind => AIBackend::OpenAI,
+                        },
+                    };
+                    AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
+                        .ok();
+                }
+                KeyCode::Char(c) => {
+                    match settings.selected_field {
+                        1 => settings.ai_settings.model.push(c),
+                        2 => settings
+                            .ai_settings
+                            .api_key
+                            .get_or_insert(String::new())
+                            .push(c),
+                        3 => settings.temp_input.push(c),
+                        4 => settings.tokens_input.push(c),
+                        _ => {}
+                    }
+                    // Update actual settings when valid
+                    if settings.selected_field == 3 {
+                        if let Ok(temp) = settings.temp_input.parse() {
+                            settings.ai_settings.temperature = temp;
+                        }
+                    }
+                    if settings.selected_field == 4 {
+                        if let Ok(tokens) = settings.tokens_input.parse() {
+                            settings.ai_settings.max_tokens = tokens;
+                        }
+                    }
+                    AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
+                        .ok();
+                }
+                KeyCode::Backspace => {
+                    match settings.selected_field {
+                        1 => _ = settings.ai_settings.model.pop(),
+                        2 => _ = settings.ai_settings.api_key.as_mut().and_then(|k| k.pop()),
+                        3 => _ = settings.temp_input.pop(),
+                        4 => _ = settings.tokens_input.pop(),
+                        _ => {}
+                    }
+                    AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
+                        .ok();
+                }
+                KeyCode::Esc | KeyCode::Char('q') => {
                     *self = CurrentScreen::MainMenu(MainMenu { selected: 0 });
                 }
                 _ => {}
@@ -223,6 +313,7 @@ impl Widget for &MainMenu {
         )
         .unwrap();
         Paragraph::new(lines).render(area, buf);
+        Paragraph::new(buffer).render(area, buf);
     }
 }
 impl Widget for &ChatView {
@@ -234,7 +325,7 @@ impl Widget for &ChatView {
         // Decide whether we need to carve off a left‐hand pane.
         let chat_area = if self.show_sidebar {
             // 1) split horizontally: left is 30 cols, right is rest
-            let mut h = Layout::default()
+            let h = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Length(30), Constraint::Min(0)])
                 .split(area);
@@ -302,16 +393,24 @@ impl Widget for &ChatView {
         }
 
         Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title("Chat"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(self.title.clone()),
+            )
             .wrap(ratatui::widgets::Wrap { trim: false })
-            // .scroll((
-            // (if self.messages.len() > (chunks[0].height as usize) {
-            //     self.messages.len() - (chunks[0].height as usize)
-            // } else {
-            //     0
-            // }) as u16,
-            // 0,
-            // ))
+            .scroll((
+                (if let Some(messages) = &self.messages {
+                    if messages.len() > (chunks[0].height as usize) {
+                        messages.len() - (chunks[0].height as usize)
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }) as u16,
+                0,
+            ))
             .render(chunks[0], buf);
 
         // Input area: always bottom
@@ -328,8 +427,36 @@ impl Widget for &ChatView {
 
 impl Widget for &Settings {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        Paragraph::new("hi")
-            .block(Block::default().title("Settings").borders(Borders::ALL))
+        let fields = vec![
+            format!("Backend: {:?}", self.ai_settings.backend),
+            format!("Model: {}", self.ai_settings.model),
+            format!(
+                "API Key: {}",
+                self.ai_settings.api_key.as_deref().unwrap_or("<none>")
+            ),
+            format!("Temperature: {}", self.temp_input),
+            format!("Max Tokens: {}", self.tokens_input),
+        ];
+
+        let items: Vec<Line> = fields
+            .iter()
+            .enumerate()
+            .map(|(i, text)| {
+                let style = if i == self.selected_field {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                Line::from(Span::styled(text, style))
+            })
+            .collect();
+
+        Paragraph::new(items)
+            .block(
+                Block::default()
+                    .title("Settings (q to quit)")
+                    .borders(Borders::ALL),
+            )
             .render(area, buf);
     }
 }

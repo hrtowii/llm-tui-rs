@@ -1,0 +1,122 @@
+[
+  {
+    "id": 0,
+    "name": "Default Chat",
+    "messages": [
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello there! 😊 How can I help you today?"
+      },
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
+      },
+      {
+        "role": "User",
+        "content": "what model are you"
+      },
+      {
+        "role": "Assistant",
+        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
+      }
+    ]
+  },
+  {
+    "id": 1,
+    "name": "pooping Chat",
+    "messages": [
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello there! 😊 How can I help you today?"
+      },
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
+      },
+      {
+        "role": "User",
+        "content": "what model are you"
+      },
+      {
+        "role": "Assistant",
+        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "pissing Chat",
+    "messages": [
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello there! 😊 How can I help you today?"
+      },
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
+      },
+      {
+        "role": "User",
+        "content": "what model are you"
+      },
+      {
+        "role": "Assistant",
+        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "meowing] Chat",
+    "messages": [
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello there! 😊 How can I help you today?"
+      },
+      {
+        "role": "User",
+        "content": "hello"
+      },
+      {
+        "role": "Assistant",
+        "content": "Hello, hello, hello! 😄  \nIt’s great to hear from you. How’s your day going?"
+      },
+      {
+        "role": "User",
+        "content": "what model are you"
+      },
+      {
+        "role": "Assistant",
+        "content": "I'm based on OpenAI's GPT-4 architecture! I'm designed to help answer questions, have conversations, and assist with a wide range of topics. If you have more specific questions about how I work or what I can do, feel free to ask! 😊"
+      }
+    ]
+  }
+]

@@ -134,7 +134,7 @@ impl CurrentScreen {
 
                 // normal chat view
                 match key.code {
-                    KeyCode::Char('\t') => {
+                    KeyCode::Char('u') => {
                         // toggle sidebar
                         chat.show_sidebar = true;
                     }
@@ -230,14 +230,50 @@ impl Widget for &ChatView {
         // Layout:  [messages box]
         //          [input box]
         // [TODO]: sidebar component containing past chats. storage -> ??? idk
-        let chunks = ratatui::layout::Layout::default()
-            .direction(ratatui::layout::Direction::Vertical)
-            .constraints([
-                ratatui::layout::Constraint::Min(3),
-                ratatui::layout::Constraint::Length(3),
-            ])
-            .split(area);
+        // if sidebar is ON, split horizontally:
+        // Decide whether we need to carve off a left‐hand pane.
+        let chat_area = if self.show_sidebar {
+            // 1) split horizontally: left is 30 cols, right is rest
+            let mut h = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(30), Constraint::Min(0)])
+                .split(area);
 
+            // 2) Render sidebar in h[0]
+            let items: Vec<Line> = self
+                .branches
+                .iter()
+                .enumerate()
+                .map(|(i, branch)| {
+                    let prefix = if i == self.selected_branch {
+                        "▶"
+                    } else {
+                        " "
+                    };
+                    Line::from(Span::raw(format!("{} {}", prefix, branch.name)))
+                })
+                .collect();
+
+            Paragraph::new(items)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Chats (j/k, Enter)"),
+                )
+                .render(h[0], buf);
+
+            // Return the *right* pane as the actual chat area
+            h[1]
+        } else {
+            // No sidebar: the full area is our chat area
+            area
+        };
+
+        // Now split chat_area vertically into messages + input
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .split(chat_area);
         // Message area: render each message as one line, distinguishing User/AI
         let mut lines = Vec::new();
         if let Some(messages) = &self.messages {
@@ -284,7 +320,7 @@ impl Widget for &ChatView {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Input (Esc=back)"),
+                    .title("Input (Esc=back, tab=sidebar)"),
             )
             .render(chunks[1], buf);
     }

@@ -35,6 +35,19 @@ pub async fn run_ai(
 
     if let Some(key) = &settings.api_key {
         builder = builder.api_key(key);
+    } else {
+        let api_key_string;
+        match &settings.backend {
+            AIBackend::OpenAI => api_key_string = "OPENAI_API_KEY",
+            AIBackend::Anthropic => api_key_string = "ANTHROPIC_API_KEY",
+            AIBackend::Google => api_key_string = "GOOGLE_API_KEY",
+            AIBackend::Groq => api_key_string = "GROQ_API_KEY",
+            // AIBackend::Ollama => api_key_string = "OLLAMA",
+            AIBackend::XAi => api_key_string = "XAI_API_KEY",
+            // AIBackend::Phind => api_key_string = "ANTHROPIC_API_KEY",
+            _ => api_key_string = "",
+        }
+        builder = builder.api_key(std::env::var(api_key_string).unwrap());
     }
 
     let llm = builder.build()?;

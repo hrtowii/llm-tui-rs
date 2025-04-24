@@ -24,6 +24,11 @@ pub struct MainMenu {
     pub selected: usize,
 }
 
+pub enum SidebarInputMode {
+    NewBranch, // User is naming a new branch
+    Renaming,  // User is renaming an existing branch
+}
+
 pub struct ChatView {
     pub title: String,
     pub messages: Option<Vec<Message>>,
@@ -35,6 +40,9 @@ pub struct ChatView {
 
     // where we persist them:
     pub storage_path: std::path::PathBuf,
+    // renaming and creating new chat branches
+    pub sidebar_input_mode: Option<SidebarInputMode>,
+    pub sidebar_input_buffer: String,
 }
 
 pub struct Settings {
@@ -84,6 +92,8 @@ impl CurrentScreen {
                                 show_sidebar: false,
                                 messages: Some(Vec::new()),
                                 storage_path,
+                                sidebar_input_mode: None,
+                                sidebar_input_buffer: String::new(),
                             };
                             // load messages for selected branch
                             chat_view.messages = Some(
@@ -128,29 +138,94 @@ impl CurrentScreen {
                     max_tokens: 2048,
                 }); // sidebar selection
                 if chat.show_sidebar {
-                    // sidebar is active: j/k/Enter/Esc
-                    match key.code {
-                        KeyCode::Char('j') => {
-                            chat.selected_branch = (chat.selected_branch + 1) % chat.branches.len();
+                    if let Some(input_mode) = &mut chat.sidebar_input_mode {
+                        // Handle input for renaming or new branch
+                        match key.code {
+                            KeyCode::Enter => {
+                                let new_name = chat.sidebar_input_buffer.trim();
+                                if !new_name.is_empty() {
+                                    match input_mode {
+                                        SidebarInputMode::NewBranch => {
+                                            // Create new branch with custom name
+                                            let new_branch = ChatBranch {
+                                                id: chat.branches.len() as usize,
+                                                name: new_name.to_string(),
+                                                messages: Vec::new(),
+                                            };
+                                            chat.branches.push(new_branch);
+                                            chat.selected_branch = chat.branches.len() - 1;
+                                            chat.messages = Some(Vec::new());
+                                            let _ = ChatBranch::save_all(
+                                                &chat.storage_path,
+                                                &chat.branches,
+                                            );
+                                        }
+                                        SidebarInputMode::Renaming => {
+                                            // Rename selected branch
+                                            if let Some(branch) =
+                                                chat.branches.get_mut(chat.selected_branch)
+                                            {
+                                                branch.name = new_name.to_string();
+                                                let _ = ChatBranch::save_all(
+                                                    &chat.storage_path,
+                                                    &chat.branches,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                // Reset input mode
+                                chat.sidebar_input_mode = None;
+                                chat.sidebar_input_buffer.clear();
+                            }
+                            KeyCode::Char(c) => chat.sidebar_input_buffer.push(c),
+                            KeyCode::Backspace => {
+                                chat.sidebar_input_buffer.pop();
+                            }
+                            KeyCode::Esc => {
+                                chat.sidebar_input_mode = None;
+                                chat.sidebar_input_buffer.clear();
+                            }
+                            _ => {}
                         }
-                        KeyCode::Char('k') => {
-                            chat.selected_branch = chat
-                                .selected_branch
-                                .checked_sub(1)
-                                .unwrap_or(chat.branches.len() - 1);
+                    } else {
+                        // sidebar is active: j/k/Enter/Esc/n
+                        match key.code {
+                            KeyCode::Char('j') => {
+                                chat.selected_branch =
+                                    (chat.selected_branch + 1) % chat.branches.len();
+                            }
+                            KeyCode::Char('k') => {
+                                chat.selected_branch = chat
+                                    .selected_branch
+                                    .checked_sub(1)
+                                    .unwrap_or(chat.branches.len() - 1);
+                            }
+                            KeyCode::Enter => {
+                                // switch to that chat branch
+                                chat.messages =
+                                    Some(chat.branches[chat.selected_branch].messages.clone());
+                                chat.show_sidebar = false;
+                            }
+                            KeyCode::Char('n') => {
+                                chat.sidebar_input_mode = Some(SidebarInputMode::NewBranch);
+                                chat.sidebar_input_buffer.clear();
+                            }
+                            KeyCode::Char('r') => {
+                                // Start renaming (if branches exist)
+                                if !chat.branches.is_empty() {
+                                    chat.sidebar_input_mode = Some(SidebarInputMode::Renaming);
+                                    chat.sidebar_input_buffer =
+                                        chat.branches[chat.selected_branch].name.clone();
+                                }
+                            }
+                            KeyCode::Tab | KeyCode::Esc => {
+                                chat.show_sidebar = false;
+                            }
+                            _ => {}
                         }
-                        KeyCode::Enter => {
-                            // switch to that chat branch
-                            chat.messages =
-                                Some(chat.branches[chat.selected_branch].messages.clone());
-                            chat.show_sidebar = false;
-                        }
-                        KeyCode::Tab | KeyCode::Esc => {
-                            chat.show_sidebar = false;
-                        }
-                        _ => {}
+                        return;
                     }
-                    return;
                 }
 
                 // normal chat view
@@ -275,7 +350,7 @@ impl CurrentScreen {
                     AISettings::write_all(&PathBuf::from("settings.json"), &settings.ai_settings)
                         .ok();
                 }
-                KeyCode::Esc | KeyCode::Char('q') => {
+                KeyCode::Esc => {
                     *self = CurrentScreen::MainMenu(MainMenu { selected: 0 });
                 }
                 _ => {}
@@ -313,7 +388,7 @@ impl Widget for &MainMenu {
         )
         .unwrap();
         Paragraph::new(lines).render(area, buf);
-        Paragraph::new(buffer).render(area, buf);
+        // Paragraph::new(buffer).render(area, buf);
     }
 }
 impl Widget for &ChatView {
@@ -336,21 +411,41 @@ impl Widget for &ChatView {
                 .iter()
                 .enumerate()
                 .map(|(i, branch)| {
-                    let prefix = if i == self.selected_branch {
-                        "▶"
-                    } else {
-                        " "
-                    };
-                    Line::from(Span::raw(format!("{} {}", prefix, branch.name)))
+                    let is_selected = i == self.selected_branch;
+                    let prefix = if is_selected { "▶" } else { " " };
+
+                    let mut text = format!("{} {}", prefix, branch.name);
+                    let mut style = Style::default();
+
+                    if is_selected
+                        && matches!(self.sidebar_input_mode, Some(SidebarInputMode::Renaming))
+                    {
+                        text = format!("{} {}", prefix, self.sidebar_input_buffer);
+                        style = style.bg(Color::DarkGray);
+                    }
+
+                    Line::from(Span::styled(text, style))
                 })
                 .collect();
 
-            Paragraph::new(items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Chats (j/k, Enter)"),
-                )
+            let mut all_lines = items;
+
+            if let Some(SidebarInputMode::NewBranch) = self.sidebar_input_mode {
+                let input_line = Line::from(Span::styled(
+                    format!("▶ {}", self.sidebar_input_buffer),
+                    Style::default().bg(Color::DarkGray),
+                ));
+                all_lines.push(input_line);
+            }
+
+            Paragraph::new(all_lines)
+                .block(Block::default().borders(Borders::ALL).title(
+                    match self.sidebar_input_mode {
+                        Some(SidebarInputMode::NewBranch) => "New Chat (Enter: save, Esc: cancel)",
+                        Some(SidebarInputMode::Renaming) => "Renaming (Enter: save, Esc: cancel)",
+                        None => "Chats (n: new, r: rename)",
+                    },
+                ))
                 .render(h[0], buf);
 
             // Return the *right* pane as the actual chat area

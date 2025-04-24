@@ -1,4 +1,4 @@
-use crate::ai::run_ai;
+use crate::ai::{generate_chat_title, run_ai};
 use crate::ai_backend::{AIBackend, AISettings};
 use crate::chat_branch::ChatBranch;
 use crate::chat_structs::{Message, Role};
@@ -11,6 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 use std::path::PathBuf;
+use tui_markdown::from_str;
 // use std::collections::VecDeque;
 
 pub enum CurrentScreen {
@@ -30,7 +31,6 @@ pub enum SidebarInputMode {
 }
 
 pub struct ChatView {
-    pub title: String,
     pub messages: Option<Vec<Message>>,
     pub input_buffer: String,
     // the sidebar fields:
@@ -85,7 +85,6 @@ impl CurrentScreen {
                     *self = match menu.selected {
                         0 => {
                             let mut chat_view = ChatView {
-                                title: "New Chat".to_string(),
                                 input_buffer: String::new(),
                                 branches,
                                 selected_branch: 0,
@@ -235,43 +234,59 @@ impl CurrentScreen {
                         chat.show_sidebar = true;
                     }
                     KeyCode::Char(c) => {
-                        chat.input_buffer.push(c);
+                        if !chat.show_sidebar {
+                            chat.input_buffer.push(c);
+                        }
                     }
                     KeyCode::Backspace => {
                         chat.input_buffer.pop();
                     }
                     KeyCode::Enter => {
-                        let user_input = chat.input_buffer.trim();
-                        if !user_input.is_empty() {
-                            chat.messages.as_mut().unwrap().push(Message {
-                                role: Role::User,
-                                content: user_input.to_string(),
-                            });
-                            match run_ai(chat.messages.clone(), user_input, &settings).await {
-                                Ok(reply) => {
-                                    chat.messages.as_mut().unwrap().push(Message {
-                                        role: Role::Assistant,
-                                        content: reply,
-                                    });
+                        if !chat.show_sidebar {
+                            let user_input = chat.input_buffer.trim();
+                            if !user_input.is_empty() {
+                                chat.messages.as_mut().unwrap().push(Message {
+                                    role: Role::User,
+                                    content: user_input.to_string(),
+                                });
+                                match run_ai(chat.messages.clone(), user_input, &settings).await {
+                                    Ok(reply) => {
+                                        chat.messages.as_mut().unwrap().push(Message {
+                                            role: Role::Assistant,
+                                            content: reply,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        chat.messages.as_mut().unwrap().push(Message {
+                                            role: Role::Assistant,
+                                            content: format!("AI Error: {}", e),
+                                        });
+                                    }
                                 }
-                                Err(e) => {
-                                    chat.messages.as_mut().unwrap().push(Message {
-                                        role: Role::Assistant,
-                                        content: format!("AI Error: {}", e),
-                                    });
+                                // persist back to branch
+                                if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
+                                    branch.messages = chat.messages.as_mut().unwrap().clone();
+                                    // idk how to make this behavior tbh
+                                    if branch.name == "Default Chat" || branch.name.is_empty() {
+                                        if let Ok(new_title) = generate_chat_title(
+                                            Some(branch.messages.clone()),
+                                            &settings,
+                                        )
+                                        .await
+                                        {
+                                            branch.name = new_title;
+                                        }
+                                    }
                                 }
-                            }
-                            // persist back to branch
-                            if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
-                                branch.messages = chat.messages.as_mut().unwrap().clone();
+
                                 let _ = ChatBranch::save_all(&chat.storage_path, &chat.branches);
+                                // Clear input
+                                chat.input_buffer.clear();
+                                // Optionally scroll up if too many
+                                // if chat.messages.len() > 100 {
+                                //     chat.messages.pop_front();
+                                // }
                             }
-                            // Clear input
-                            chat.input_buffer.clear();
-                            // Optionally scroll up if too many
-                            // if chat.messages.len() > 100 {
-                            //     chat.messages.pop_front();
-                            // }
                         }
                     }
                     KeyCode::Esc => {
@@ -465,24 +480,36 @@ impl Widget for &ChatView {
         if let Some(messages) = &self.messages {
             for msg in messages {
                 let prefix = match msg.role {
-                    Role::User => "You: ",
-                    Role::Assistant => "Assistant: ",
+                    Role::User => Span::styled(
+                        "You: ",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Role::Assistant => Span::styled(
+                        "Assistant: ",
+                        Style::default()
+                            .fg(Color::Blue)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 };
-                if let Role::Assistant = msg.role {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            "Assistant: ",
-                            Style::default()
-                                .fg(Color::Blue)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(&msg.content),
-                    ]));
-                } else {
-                    lines.push(Line::from(vec![
-                        Span::styled(prefix, Style::default().fg(Color::Green)),
-                        Span::raw(&msg.content),
-                    ]));
+
+                let markdown = from_str(&msg.content);
+                // idk how this works but i like deepseek
+                // Text contains Lines which contains Spans, so loop through the lines and add the spans to the string.
+                for (i, line) in markdown.lines.into_iter().enumerate() {
+                    let mut spans = Vec::with_capacity(line.spans.len() + 1);
+
+                    // Add prefix only to the first line
+                    if i == 0 {
+                        spans.push(prefix.clone());
+                    } else {
+                        // Add indentation for wrapped lines
+                        spans.push(Span::from("".repeat(prefix.width())));
+                    }
+
+                    spans.extend(line.spans);
+                    lines.push(Line::from(spans));
                 }
             }
         }
@@ -491,7 +518,7 @@ impl Widget for &ChatView {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(self.title.clone()),
+                    .title(self.branches[self.selected_branch].name.clone()),
             )
             .wrap(ratatui::widgets::Wrap { trim: false })
             .scroll((
@@ -567,8 +594,6 @@ impl Widget for &Settings {
 // Implement Widget for the CurrentScreen enum
 impl Widget for &CurrentScreen {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // You can render common elements here (like a header or footer)
-        // For example:
         let header_area = Rect { height: 1, ..area };
         Paragraph::new("llm-tui :3").render(header_area, buf);
 
@@ -587,20 +612,3 @@ impl Widget for &CurrentScreen {
         }
     }
 }
-
-// pub struct Project {
-//     pub name: String,
-//     pub chats: Vec<ChatBranch>,
-// }
-//
-// pub struct ChatBranch {
-//     pub root: Chat,
-//     pub current: ChatId,
-//     pub branches: HashMap<ChatId, Chat>,
-// }
-//
-// pub struct Chat {
-//     pub id: ChatId,
-//     pub messages: Vec<Message>,
-//     pub parent: Option<ChatId>,
-// }

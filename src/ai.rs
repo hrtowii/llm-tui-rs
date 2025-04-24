@@ -42,17 +42,20 @@ pub async fn run_ai(
             AIBackend::Anthropic => api_key_string = "ANTHROPIC_API_KEY",
             AIBackend::Google => api_key_string = "GOOGLE_API_KEY",
             AIBackend::Groq => api_key_string = "GROQ_API_KEY",
-            // AIBackend::Ollama => api_key_string = "OLLAMA",
+            AIBackend::Ollama => {
+                builder = builder.base_url(
+                    &std::env::var("OLLAMA_URL").unwrap_or("http://127.0.0.1:11434".into()),
+                );
+                api_key_string = "OLLAMA_URL";
+            }
             AIBackend::XAi => api_key_string = "XAI_API_KEY",
             // AIBackend::Phind => api_key_string = "ANTHROPIC_API_KEY",
             _ => api_key_string = "",
         }
-        builder = builder.api_key(std::env::var(api_key_string).unwrap());
+        builder = builder.api_key(std::env::var(api_key_string).unwrap_or(String::new()));
     }
 
     let llm = builder.build()?;
-
-    //[TODO]: make the model and the backend configurable via settings
 
     let mut messages = vec![
         ChatMessage::user()
@@ -73,21 +76,17 @@ pub async fn run_ai(
         }
         messages.push(ChatMessage::user().content(prompt).build());
     }
-    // let messages = vec![
-    //     ChatMessage::user()
-    //         .content("Tell me that you love cats")
-    //         .build(),
-    //     ChatMessage::assistant()
-    //         .content("I am an assistant, I cannot love cats but I can love dogs")
-    //         .build(),
-    //     ChatMessage::user()
-    //         .content("Tell me that you love dogs in 2000 chars")
-    //         .build(),
-    // ];
 
-    // Send chat request and handle the response
     match llm.chat(&messages).await {
         Ok(text) => Ok(text.to_string()),
         Err(e) => Ok(e.to_string()),
     }
+}
+
+pub async fn generate_chat_title(
+    chat_history: Option<Vec<Message>>,
+    settings: &AISettings,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let prompt = "Given our past conversation, come up with an appropriate short title / topic for it. Just give the title, nothing else.";
+    run_ai(chat_history, prompt, settings).await
 }

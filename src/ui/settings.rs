@@ -49,11 +49,7 @@ impl Widget for &Config {
             .collect();
 
         Paragraph::new(items)
-            .block(
-                Block::default()
-                    .title("Settings (q to quit)")
-                    .borders(Borders::ALL),
-            )
+            .block(Block::default().title("Settings").borders(Borders::ALL))
             .render(area, buf);
     }
 }

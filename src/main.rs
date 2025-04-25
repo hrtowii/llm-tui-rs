@@ -26,12 +26,11 @@ async fn run(mut terminal: DefaultTerminal) -> Result<()> {
     loop {
         terminal.draw(|f| render(f, &current_screen))?;
         if let Event::Key(key_event) = event::read()? {
-            // universal quit on 'q'
-            if key_event.code == KeyCode::Char('q') {
-                break Ok(());
-            }
             // delegate to the current screen
             current_screen.on_key(key_event).await;
+            if let CurrentScreen::Exit(_) = current_screen {
+                break Ok(());
+            }
         }
     }
 }

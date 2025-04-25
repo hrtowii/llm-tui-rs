@@ -76,6 +76,7 @@ impl CurrentScreen {
                             storage_path,
                             sidebar_input_mode: None,
                             sidebar_input_buffer: String::new(),
+                            scroll: 0,
                         };
                         // load messages for selected branch
                         chat_view.messages = Some(

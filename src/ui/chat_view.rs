@@ -33,6 +33,8 @@ pub struct ChatView {
     // renaming and creating new chat branches
     pub sidebar_input_mode: Option<SidebarInputMode>,
     pub sidebar_input_buffer: String,
+
+    pub scroll: usize,
 }
 
 fn iter_messages<'a>(messages: &'a [Message], lines: &mut Vec<Line<'a>>) {
@@ -159,12 +161,12 @@ impl Widget for &ChatView {
                     if messages.len() > (chunks[0].height as usize) {
                         messages.len() - (chunks[0].height as usize)
                     } else {
-                        0
+                        self.scroll
                     }
                 } else {
-                    0
+                    self.scroll
                 }) as u16,
-                0,
+                self.scroll.try_into().unwrap(),
             ))
             .render(chunks[0], buf);
 
@@ -288,6 +290,14 @@ impl CurrentScreen {
             KeyCode::Tab => {
                 // toggle sidebar
                 chat.show_sidebar = true;
+            }
+            KeyCode::Up => {
+                if chat.scroll >= 5 {
+                    chat.scroll -= 5;
+                }
+            }
+            KeyCode::Down => {
+                chat.scroll += 5;
             }
             KeyCode::Char(c) => {
                 if !chat.show_sidebar {

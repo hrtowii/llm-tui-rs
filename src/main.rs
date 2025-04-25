@@ -10,8 +10,9 @@ mod app;
 mod chat_branch;
 mod chat_structs;
 use app::CurrentScreen;
-use app::MainMenu;
+mod ui;
 
+use ui::MainMenu;
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;

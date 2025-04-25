@@ -4,6 +4,7 @@ use crate::ai_backend::{AIBackend, AISettings};
 use crate::chat_branch::ChatBranch;
 use crate::chat_structs::{Message, Role};
 use crate::ui::MainMenu;
+use anyhow::{Context, Result, bail};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::{
@@ -14,7 +15,6 @@ use ratatui::{
 };
 use std::path::PathBuf;
 use tui_markdown::from_str;
-use anyhow::{bail, Context, Result};
 
 pub enum SidebarInputMode {
     NewBranch, // User is naming a new branch
@@ -162,11 +162,10 @@ impl Widget for &ChatView {
                     self.messages
                         .as_ref()
                         .and_then(|x| x.len().checked_sub(chunks[0].height as usize))
-                        .unwrap_or(self.scroll)
-                ).unwrap(),
-                self.scroll
-                    .try_into()
-                    .unwrap(),
+                        .unwrap_or(self.scroll),
+                )
+                .unwrap(),
+                self.scroll.try_into().unwrap(),
             ))
             .render(chunks[0], buf);
 
@@ -234,7 +233,8 @@ impl CurrentScreen {
                     chat.selected_branch = (chat.selected_branch + 1) % chat.branches.len();
                 }
                 KeyCode::Char('k') => {
-                    chat.selected_branch = (chat.branches.len() + chat.selected_branch - 1) % chat.branches.len();
+                    chat.selected_branch =
+                        (chat.branches.len() + chat.selected_branch - 1) % chat.branches.len();
                 }
                 KeyCode::Enter => {
                     // switch to that chat branch
@@ -246,16 +246,15 @@ impl CurrentScreen {
                 }
                 KeyCode::Char('n') => {
                     chat.sidebar_input_mode = Some(SidebarInputMode::NewBranch);
-                    chat.sidebar_input_buffer.clear();
+                    // chat.sidebar_input_buffer.clear();
+                    chat.sidebar_input_buffer = "Default Chat".to_string();
                 }
                 KeyCode::Char('r') => {
                     // Start renaming (if branches exist)
                     if !chat.branches.is_empty() {
                         chat.sidebar_input_mode = Some(SidebarInputMode::Renaming);
                         chat.sidebar_input_buffer =
-                            chat.branches[chat.selected_branch]
-                                .name
-                                .to_string();
+                            chat.branches[chat.selected_branch].name.to_string();
                     }
                 }
                 KeyCode::Tab | KeyCode::Esc => {
@@ -309,22 +308,32 @@ impl CurrentScreen {
                 if !chat.show_sidebar {
                     let user_input = chat.input_buffer.trim();
                     if !user_input.is_empty() {
-                        chat.messages.as_mut().context("No messages found")?.push(Message {
-                            role: Role::User,
-                            content: user_input.to_string(),
-                        });
+                        chat.messages
+                            .as_mut()
+                            .context("No messages found")?
+                            .push(Message {
+                                role: Role::User,
+                                content: user_input.to_string(),
+                            });
                         let content =
                             match run_ai(chat.messages.as_deref(), user_input, &settings).await {
                                 Ok(reply) => reply,
                                 Err(e) => format!("AI Error: {e}"),
                             };
-                        chat.messages.as_mut().context("No messages found")?.push(Message {
-                            role: Role::Assistant,
-                            content,
-                        });
+                        chat.messages
+                            .as_mut()
+                            .context("No messages found")?
+                            .push(Message {
+                                role: Role::Assistant,
+                                content,
+                            });
                         // persist back to branch
                         if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
-                            branch.messages = chat.messages.as_deref().context("No messages found")?.to_vec();
+                            branch.messages = chat
+                                .messages
+                                .as_deref()
+                                .context("No messages found")?
+                                .to_vec();
                             // idk how to make this behavior tbh
                             if branch.name == "Default Chat" || branch.name.is_empty() {
                                 if let Ok(new_title) =

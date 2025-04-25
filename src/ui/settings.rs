@@ -29,10 +29,11 @@ impl Widget for &Config {
             format!("Model: {}", self.ai_settings.model),
             format!(
                 "API Key: {}",
-                self.ai_settings
-                    .api_key
-                    .as_deref()
-                    .unwrap_or("<none>")
+                self.ai_settings.api_key.as_deref().unwrap_or(
+                    std::env::var(self.ai_settings.backend.to_env_var())
+                        .unwrap_or("<none>".to_string())
+                        .as_str()
+                )
             ),
             format!("Temperature: {}", self.temp_input),
             format!("Max Tokens: {}", self.tokens_input),

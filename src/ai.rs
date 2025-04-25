@@ -8,11 +8,11 @@
 // https://github.com/graniet/llm/blob/main/examples/multi_backend_example.rs
 use crate::ai_backend::{AIBackend, AISettings};
 use crate::chat_structs::{Message, Role};
+use anyhow::Result;
 use llm::{
     builder::LLMBuilder, // Builder pattern components
     chat::ChatMessage,
 };
-use anyhow::Result;
 
 pub async fn run_ai(
     chat_history: Option<&[Message]>,
@@ -34,8 +34,9 @@ pub async fn run_ai(
                 std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://127.0.0.1:11434".into()),
             );
         }
-        builder = builder.api_key(std::env::var(settings.backend.to_env_var())
-                         .unwrap_or_else(|_| String::new()));
+        builder = builder.api_key(
+            std::env::var(settings.backend.to_env_var()).unwrap_or_else(|_| String::new()),
+        );
     }
 
     let llm = builder.build()?;
@@ -50,12 +51,8 @@ pub async fn run_ai(
     if let Some(history) = chat_history {
         for message in history {
             let chat_msg = match message.role {
-                Role::User => ChatMessage::user()
-                    .content(&message.content)
-                    .build(),
-                Role::Assistant => ChatMessage::assistant()
-                    .content(&message.content)
-                    .build(),
+                Role::User => ChatMessage::user().content(&message.content).build(),
+                Role::Assistant => ChatMessage::assistant().content(&message.content).build(),
             };
             messages.push(chat_msg);
         }
@@ -64,7 +61,13 @@ pub async fn run_ai(
 
     llm.chat(&messages)
         .await
-        .map(|x| x.to_string())
+        .map(|x| {
+            if settings.backend == AIBackend::Google {
+                x.text().unwrap()
+            } else {
+                x.to_string()
+            }
+        })
         .map_err(Into::into)
 }
 

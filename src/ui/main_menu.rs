@@ -2,9 +2,9 @@ use crate::{
     ai_backend::{AIBackend, AISettings},
     app::{CurrentScreen, Exit},
     chat_branch::ChatBranch,
-    ui::{ChatView, Config}
+    ui::{ChatView, Config},
 };
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -52,10 +52,10 @@ impl CurrentScreen {
             bail!("Not in main menu");
         };
         match key.code {
-            KeyCode::Char('j') => {
+            KeyCode::Char('j') | KeyCode::Down => {
                 menu.selected = (menu.selected + 1) % 3;
             }
-            KeyCode::Char('k') => {
+            KeyCode::Char('k') | KeyCode::Up => {
                 menu.selected = (3 + menu.selected - 1) % 3;
             }
             KeyCode::Enter => {

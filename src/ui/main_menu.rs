@@ -1,8 +1,9 @@
-use crate::ai_backend::{AIBackend, AISettings};
-use crate::app::CurrentScreen;
-use crate::app::Exit;
-use crate::chat_branch::ChatBranch;
-use crate::ui::{ChatView, Config};
+use crate::{
+    ai_backend::{AIBackend, AISettings},
+    app::{CurrentScreen, Exit},
+    chat_branch::ChatBranch,
+    ui::{ChatView, Config}
+};
 use anyhow::{bail, Result};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -12,6 +13,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 use std::path::PathBuf;
+
 pub struct MainMenu {
     pub selected: usize,
 }
@@ -54,7 +56,7 @@ impl CurrentScreen {
                 menu.selected = (menu.selected + 1) % 3;
             }
             KeyCode::Char('k') => {
-                menu.selected = (menu.selected - 1).rem_euclid(3);
+                menu.selected = (3 + menu.selected - 1) % 3;
             }
             KeyCode::Enter => {
                 let storage_path = PathBuf::from("chats.json");

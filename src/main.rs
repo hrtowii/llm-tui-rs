@@ -1,5 +1,4 @@
 #![warn(clippy::all, clippy::pedantic)]
-#![allow(clippy::cast_possible_truncation)]
 
 use color_eyre::{eyre::eyre, Result};
 use crossterm::event::{self, Event};

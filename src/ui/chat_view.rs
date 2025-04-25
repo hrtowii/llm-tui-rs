@@ -158,16 +158,15 @@ impl Widget for &ChatView {
             )
             .wrap(ratatui::widgets::Wrap { trim: false })
             .scroll((
-                (if let Some(messages) = &self.messages {
-                    if messages.len() > (chunks[0].height as usize) {
-                        messages.len() - (chunks[0].height as usize)
-                    } else {
-                        self.scroll
-                    }
-                } else {
-                    self.scroll
-                }) as u16,
-                self.scroll.try_into().unwrap(),
+                u16::try_from(
+                    self.messages
+                        .as_ref()
+                        .and_then(|x| x.len().checked_sub(chunks[0].height as usize))
+                        .unwrap_or(self.scroll)
+                ).unwrap(),
+                self.scroll
+                    .try_into()
+                    .unwrap(),
             ))
             .render(chunks[0], buf);
 
@@ -235,7 +234,7 @@ impl CurrentScreen {
                     chat.selected_branch = (chat.selected_branch + 1) % chat.branches.len();
                 }
                 KeyCode::Char('k') => {
-                    chat.selected_branch = (chat.selected_branch - 1).rem_euclid(chat.branches.len());
+                    chat.selected_branch = (chat.branches.len() + chat.selected_branch - 1) % chat.branches.len();
                 }
                 KeyCode::Enter => {
                     // switch to that chat branch
@@ -254,7 +253,9 @@ impl CurrentScreen {
                     if !chat.branches.is_empty() {
                         chat.sidebar_input_mode = Some(SidebarInputMode::Renaming);
                         chat.sidebar_input_buffer =
-                            chat.branches[chat.selected_branch].name.to_string();
+                            chat.branches[chat.selected_branch]
+                                .name
+                                .to_string();
                     }
                 }
                 KeyCode::Tab | KeyCode::Esc => {

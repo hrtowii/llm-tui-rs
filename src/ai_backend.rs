@@ -10,10 +10,11 @@
 //
 // But how do I link it together
 use anyhow::Result;
+use llm::builder::LLMBackend;
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::Path};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AIBackend {
     OpenAI,
     Anthropic,
@@ -22,6 +23,34 @@ pub enum AIBackend {
     Ollama,
     XAi,
     Phind,
+}
+
+impl From<AIBackend> for LLMBackend {
+    fn from(val: AIBackend) -> Self {
+        match val {
+            AIBackend::OpenAI => LLMBackend::OpenAI,
+            AIBackend::Anthropic => LLMBackend::Anthropic,
+            AIBackend::Google => LLMBackend::Google,
+            AIBackend::Groq => LLMBackend::Groq,
+            AIBackend::Ollama => LLMBackend::Ollama,
+            AIBackend::XAi => LLMBackend::XAI,
+            AIBackend::Phind => LLMBackend::Phind,
+        }
+    }
+}
+
+impl AIBackend {
+    pub fn to_env_var(self) -> &'static str {
+        match self {
+            AIBackend::OpenAI => "OPENAI_API_KEY",
+            AIBackend::Anthropic => "ANTHROPIC_API_KEY",
+            AIBackend::Google => "GOOGLE_API_KEY",
+            AIBackend::Groq => "GROQ_API_KEY",
+            AIBackend::Ollama => "OLLAMA_URL",
+            AIBackend::XAi => "XAI_API_KEY",
+            AIBackend::Phind => "",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -46,8 +75,8 @@ impl AIBackend {
         Ok(items)
     }
 
-    pub fn write_all(path: &Path, list: &AIBackend) -> Result<()> {
-        let s = serde_json::to_string_pretty(list)?;
+    pub fn write_all(path: &Path, list: AIBackend) -> Result<()> {
+        let s = serde_json::to_string_pretty(&list)?;
         fs::write(path, s)?;
         Ok(())
     }

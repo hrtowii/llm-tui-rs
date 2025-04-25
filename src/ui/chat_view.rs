@@ -14,6 +14,7 @@ use ratatui::{
 };
 use std::path::PathBuf;
 use tui_markdown::from_str;
+use anyhow::{bail, Context, Result};
 
 pub enum SidebarInputMode {
     NewBranch, // User is naming a new branch
@@ -97,13 +98,13 @@ impl Widget for &ChatView {
                     let is_selected = i == self.selected_branch;
                     let prefix = if is_selected { "▶" } else { " " };
 
-                    let mut text = format!("{} {}", prefix, branch.name);
+                    let mut text = format!("{prefix} {branch}", branch = branch.name);
                     let mut style = Style::default();
 
                     if is_selected
                         && matches!(self.sidebar_input_mode, Some(SidebarInputMode::Renaming))
                     {
-                        text = format!("{} {}", prefix, self.sidebar_input_buffer);
+                        text = format!("{prefix} {input}", input = self.sidebar_input_buffer);
                         style = style.bg(Color::DarkGray);
                     }
 
@@ -183,7 +184,7 @@ impl Widget for &ChatView {
 }
 
 impl CurrentScreen {
-    pub fn handle_chat_view_sidebar(chat: &mut ChatView, key: KeyEvent) -> bool {
+    pub fn handle_chat_view_sidebar(chat: &mut ChatView, key: KeyEvent) -> Result<bool> {
         if let Some(input_mode) = &mut chat.sidebar_input_mode {
             // Handle input for renaming or new branch
             match key.code {
@@ -201,14 +202,13 @@ impl CurrentScreen {
                                 chat.branches.push(new_branch);
                                 chat.selected_branch = chat.branches.len() - 1;
                                 chat.messages = Some(Vec::new());
-                                ChatBranch::save_all(&chat.storage_path, &chat.branches).unwrap();
+                                ChatBranch::save_all(&chat.storage_path, &chat.branches)?;
                             }
                             SidebarInputMode::Renaming => {
                                 // Rename selected branch
                                 if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
                                     branch.name = new_name.to_string();
-                                    ChatBranch::save_all(&chat.storage_path, &chat.branches)
-                                        .unwrap();
+                                    ChatBranch::save_all(&chat.storage_path, &chat.branches)?;
                                 }
                             }
                         }
@@ -227,7 +227,7 @@ impl CurrentScreen {
                 }
                 _ => {}
             }
-            false
+            Ok(false)
         } else {
             // sidebar is active: j/k/Enter/Esc/n
             match key.code {
@@ -235,10 +235,7 @@ impl CurrentScreen {
                     chat.selected_branch = (chat.selected_branch + 1) % chat.branches.len();
                 }
                 KeyCode::Char('k') => {
-                    chat.selected_branch = chat
-                        .selected_branch
-                        .checked_sub(1)
-                        .unwrap_or(chat.branches.len() - 1);
+                    chat.selected_branch = (chat.selected_branch - 1).rem_euclid(chat.branches.len());
                 }
                 KeyCode::Enter => {
                     // switch to that chat branch
@@ -265,13 +262,13 @@ impl CurrentScreen {
                 }
                 _ => {}
             }
-            true
+            Ok(true)
         }
     }
 
-    pub async fn handle_chat_view(&mut self, key: KeyEvent) {
+    pub async fn handle_chat_view(&mut self, key: KeyEvent) -> Result<()> {
         let CurrentScreen::ChatView(chat) = self else {
-            return;
+            bail!("Not in chat view");
         };
         let storage_path = PathBuf::from("settings.json");
         let settings = AISettings::load_all(&storage_path).unwrap_or(AISettings {
@@ -281,8 +278,8 @@ impl CurrentScreen {
             temperature: 0.7,
             max_tokens: 2048,
         }); // sidebar selection
-        if chat.show_sidebar && Self::handle_chat_view_sidebar(chat, key) {
-            return;
+        if chat.show_sidebar && Self::handle_chat_view_sidebar(chat, key)? {
+            return Ok(());
         }
 
         // normal chat view
@@ -311,7 +308,7 @@ impl CurrentScreen {
                 if !chat.show_sidebar {
                     let user_input = chat.input_buffer.trim();
                     if !user_input.is_empty() {
-                        chat.messages.as_mut().unwrap().push(Message {
+                        chat.messages.as_mut().context("No messages found")?.push(Message {
                             role: Role::User,
                             content: user_input.to_string(),
                         });
@@ -320,13 +317,13 @@ impl CurrentScreen {
                                 Ok(reply) => reply,
                                 Err(e) => format!("AI Error: {e}"),
                             };
-                        chat.messages.as_mut().unwrap().push(Message {
+                        chat.messages.as_mut().context("No messages found")?.push(Message {
                             role: Role::Assistant,
                             content,
                         });
                         // persist back to branch
                         if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
-                            branch.messages = chat.messages.as_deref().unwrap().to_vec();
+                            branch.messages = chat.messages.as_deref().context("No messages found")?.to_vec();
                             // idk how to make this behavior tbh
                             if branch.name == "Default Chat" || branch.name.is_empty() {
                                 if let Ok(new_title) =
@@ -337,7 +334,7 @@ impl CurrentScreen {
                             }
                         }
 
-                        ChatBranch::save_all(&chat.storage_path, &chat.branches).unwrap();
+                        ChatBranch::save_all(&chat.storage_path, &chat.branches)?;
                         // Clear input
                         chat.input_buffer.clear();
                         // Optionally scroll up if too many
@@ -352,5 +349,6 @@ impl CurrentScreen {
             }
             _ => {}
         }
+        Ok(())
     }
 }

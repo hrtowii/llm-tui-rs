@@ -1,8 +1,8 @@
 #![warn(clippy::all, clippy::pedantic)]
 #![allow(clippy::cast_possible_truncation)]
 
-use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode};
+use color_eyre::{eyre::eyre, Result};
+use crossterm::event::{self, Event};
 use ratatui::{DefaultTerminal, Frame};
 mod ai;
 mod ai_backend;
@@ -21,13 +21,17 @@ async fn main() -> Result<()> {
     ratatui::restore();
     result
 }
+
 async fn run(mut terminal: DefaultTerminal) -> Result<()> {
     let mut current_screen = CurrentScreen::MainMenu(MainMenu { selected: 0 });
     loop {
         terminal.draw(|f| render(f, &current_screen))?;
         if let Event::Key(key_event) = event::read()? {
             // delegate to the current screen
-            current_screen.on_key(key_event).await;
+            current_screen
+                .on_key(key_event)
+                .await
+                .map_err(|err| eyre!(Box::new(err)))?;
             if let CurrentScreen::Exit(_) = current_screen {
                 break Ok(());
             }

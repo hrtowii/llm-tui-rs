@@ -29,7 +29,10 @@ impl Widget for &Config {
             format!("Model: {}", self.ai_settings.model),
             format!(
                 "API Key: {}",
-                self.ai_settings.api_key.as_deref().unwrap_or("<none>")
+                self.ai_settings
+                    .api_key
+                    .as_deref()
+                    .unwrap_or("<none>")
             ),
             format!("Temperature: {}", self.temp_input),
             format!("Max Tokens: {}", self.tokens_input),

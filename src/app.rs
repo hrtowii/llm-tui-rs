@@ -6,6 +6,8 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
+use anyhow::Result;
+
 pub enum CurrentScreen {
     MainMenu(MainMenu),
     ChatView(ChatView),
@@ -20,13 +22,14 @@ pub struct Exit {
 // -- Input Handling
 
 impl CurrentScreen {
-    pub async fn on_key(&mut self, key: KeyEvent) {
+    pub async fn on_key(&mut self, key: KeyEvent) -> Result<()> {
         match self {
-            CurrentScreen::MainMenu(_) => self.handle_main_menu(key),
-            CurrentScreen::ChatView(_) => self.handle_chat_view(key).await,
+            CurrentScreen::MainMenu(_) => self.handle_main_menu(key)?,
+            CurrentScreen::ChatView(_) => self.handle_chat_view(key).await?,
             CurrentScreen::Settings(_) => self.handle_settings(key),
             CurrentScreen::Exit(_) => {}
         }
+        Ok(())
     }
 }
 

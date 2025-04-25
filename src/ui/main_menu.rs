@@ -3,6 +3,7 @@ use crate::app::CurrentScreen;
 use crate::app::Exit;
 use crate::chat_branch::ChatBranch;
 use crate::ui::{ChatView, Config};
+use anyhow::{bail, Result};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -44,20 +45,20 @@ impl Widget for &MainMenu {
 }
 
 impl CurrentScreen {
-    pub fn handle_main_menu(&mut self, key: KeyEvent) {
+    pub fn handle_main_menu(&mut self, key: KeyEvent) -> Result<()> {
         let CurrentScreen::MainMenu(menu) = self else {
-            return;
+            bail!("Not in main menu");
         };
         match key.code {
             KeyCode::Char('j') => {
                 menu.selected = (menu.selected + 1) % 3;
             }
             KeyCode::Char('k') => {
-                menu.selected = menu.selected.checked_sub(1).unwrap_or(2);
+                menu.selected = (menu.selected - 1).rem_euclid(3);
             }
             KeyCode::Enter => {
                 let storage_path = PathBuf::from("chats.json");
-                let mut branches = ChatBranch::load_all(&storage_path).unwrap();
+                let mut branches = ChatBranch::load_all(&storage_path)?;
                 if branches.is_empty() {
                     branches.push(ChatBranch {
                         id: 0,
@@ -110,5 +111,6 @@ impl CurrentScreen {
             }
             _ => {}
         }
+        Ok(())
     }
 }

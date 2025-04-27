@@ -2,7 +2,7 @@ use crate::CurrentScreen;
 use crate::ai::{generate_chat_title, run_ai};
 use crate::ai_backend::{AIBackend, AISettings};
 use crate::chat_branch::ChatBranch;
-use crate::chat_structs::{Message, Role};
+use crate::chat_structs::{Assistant, Message, Role};
 use crate::ui::MainMenu;
 use anyhow::{Context, Result, bail};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -37,23 +37,30 @@ pub struct ChatView {
     pub sidebar_input_buffer: String,
 
     pub scroll: usize,
-    // for async / threading
+    // for async / threading for messages
     pub ai_tx: UnboundedSender<ChatBranch>,
     pub ai_rx: UnboundedReceiver<ChatBranch>,
+    pub ai_title_tx: UnboundedSender<ChatBranch>,
+    pub ai_title_rx: UnboundedReceiver<ChatBranch>,
 }
 
 impl ChatView {
     /// helper to drain any finished AI responses
-    fn drain_ai(&mut self) -> anyhow::Result<()> {
+    pub fn drain_ai(&mut self) -> anyhow::Result<()> {
+        // there has to be a better way instead of having 2 rx/tx...
         while let Ok(updated) = self.ai_rx.try_recv() {
-            // overwrite our branch + messages
             let idx = updated.id;
             if idx < self.branches.len() {
-                // update in‐memory branch
-                self.branches[idx] = updated.clone();
-                // update what’s on screen
+                // dont replace the whole branch, bc it will revert the name
+                self.branches[idx].messages = updated.messages;
                 self.messages = Some(self.branches[idx].messages.clone());
-                // persist to disk
+                ChatBranch::save_all(&self.storage_path, &self.branches)?;
+            }
+        }
+        while let Ok(updated) = self.ai_title_rx.try_recv() {
+            let idx = updated.id;
+            if idx < self.branches.len() {
+                self.branches[idx].name = updated.name;
                 ChatBranch::save_all(&self.storage_path, &self.branches)?;
             }
         }
@@ -70,8 +77,9 @@ fn iter_messages<'a>(messages: &'a [Message], lines: &mut Vec<Line<'a>>) {
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-            Role::Assistant => Span::styled(
-                "Assistant: ",
+            Role::Assistant(ref assistant) => Span::styled(
+                // "Assistant: ",
+                format!("{}: ", assistant.model.as_str()),
                 Style::default()
                     .fg(Color::Blue)
                     .add_modifier(Modifier::BOLD),
@@ -83,15 +91,11 @@ fn iter_messages<'a>(messages: &'a [Message], lines: &mut Vec<Line<'a>>) {
         // Text contains Lines which contains Spans, so loop through the lines and add the spans to the string.
         for (i, line) in markdown.lines.into_iter().enumerate() {
             let mut spans = Vec::with_capacity(line.spans.len() + 1);
-
-            // Add prefix only to the first line
             if i == 0 {
                 spans.push(prefix.clone());
             } else {
-                // Add indentation for wrapped lines
                 spans.push(Span::from("".repeat(prefix.width())));
             }
-
             spans.extend(line.spans);
             lines.push(Line::from(spans));
         }
@@ -293,14 +297,13 @@ impl CurrentScreen {
         let CurrentScreen::ChatView(chat) = self else {
             bail!("Not in chat view");
         };
-        chat.drain_ai()?;
-
+        // chat.drain_ai()?;
         let storage_path = PathBuf::from("settings.json");
         let settings = AISettings::load_all(&storage_path).unwrap_or(AISettings {
             backend: AIBackend::OpenAI,
             model: "gpt-3.5-turbo".to_string(),
             api_key: None,
-            temperature: 0.7,
+            temperature: 0.4,
             max_tokens: 2048,
         }); // sidebar selection
         if chat.show_sidebar && Self::handle_chat_view_sidebar(chat, key)? {
@@ -341,7 +344,6 @@ impl CurrentScreen {
                                 content: user_input.to_string(),
                             });
 
-                        // ---- snapshot the branch state ----
                         let mut branch_clone = chat.branches[chat.selected_branch].clone();
 
                         // ---- spawn the real AI call in the background ----
@@ -357,7 +359,9 @@ impl CurrentScreen {
                             // remove loading, push the real reply
                             branch_clone.messages.pop(); // pop the "…Loading…"
                             branch_clone.messages.push(Message {
-                                role: Role::Assistant,
+                                role: Role::Assistant(Assistant {
+                                    model: settings_clone.model.clone(),
+                                }),
                                 content: ai_reply.clone(),
                             });
 
@@ -368,27 +372,30 @@ impl CurrentScreen {
                             .as_mut()
                             .context("No messages found")?
                             .push(Message {
-                                role: Role::Assistant,
+                                role: Role::Assistant(Assistant {
+                                    model: "Loading...".to_string(),
+                                }),
                                 content: "Loading...".to_string(),
                             });
-                        // persist back to branch
-                        if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {
-                            branch.messages = chat
-                                .messages
-                                .as_deref()
-                                .context("No messages found")?
-                                .to_vec();
-                            // idk how to make this behavior tbh
-                            if branch.name == "Default Chat" || branch.name.is_empty() {
-                                if let Ok(new_title) =
-                                    generate_chat_title(Some(&branch.messages), &settings).await
-                                {
-                                    branch.name = new_title;
-                                }
-                            }
+                        let mut branch = chat.branches[chat.selected_branch].clone();
+                        branch.messages = chat
+                            .messages
+                            .as_deref()
+                            .context("No messages found")?
+                            .to_vec();
+                        // idk how to make this behavior tbh
+                        let name_tx = chat.ai_title_tx.clone();
+                        if branch.name == "Default Chat" || branch.name.is_empty() {
+                            tokio::spawn(async move {
+                                let generated_title =
+                                    generate_chat_title(Some(&branch.messages), &settings.clone())
+                                        .await
+                                        .unwrap_or("Default Chat".to_string());
+                                branch.name = generated_title;
+                                let _ = name_tx.send(branch);
+                            });
                         }
 
-                        ChatBranch::save_all(&chat.storage_path, &chat.branches)?;
                         // Clear input
                         chat.input_buffer.clear();
                         // Optionally scroll up if too many

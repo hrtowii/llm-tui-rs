@@ -52,7 +52,7 @@ pub async fn run_ai(
         for message in history {
             let chat_msg = match message.role {
                 Role::User => ChatMessage::user().content(&message.content).build(),
-                Role::Assistant => ChatMessage::assistant().content(&message.content).build(),
+                Role::Assistant(_) => ChatMessage::assistant().content(&message.content).build(),
             };
             messages.push(chat_msg);
         }

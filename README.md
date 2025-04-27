@@ -14,7 +14,7 @@
 - [ ] image rendering...
 - [ ] make the settings ui more intuitive
 - [x] async send the messages,
-- [ ] make the assistant message box say the model name
+- [x] make the assistant message box say the model name
 - [ ] attach files and images somehow, maybe slash commands
 - [ ] tool calling with browsers, MCP possibly
 - [ ] refactor all before doing this???

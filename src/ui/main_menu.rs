@@ -72,6 +72,7 @@ impl CurrentScreen {
                 *self = match menu.selected {
                     0 => {
                         let (ai_tx, ai_rx) = unbounded_channel::<ChatBranch>();
+                        let (ai_title_tx, ai_title_rx) = unbounded_channel::<ChatBranch>();
 
                         let mut chat_view = ChatView {
                             input_buffer: String::new(),
@@ -85,6 +86,8 @@ impl CurrentScreen {
                             scroll: 0,
                             ai_tx,
                             ai_rx,
+                            ai_title_tx,
+                            ai_title_rx,
                         };
                         // load messages for selected branch
                         chat_view.messages = Some(

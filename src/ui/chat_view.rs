@@ -14,6 +14,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 use std::path::PathBuf;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tui_markdown::from_str;
 
 pub enum SidebarInputMode {
@@ -36,6 +37,28 @@ pub struct ChatView {
     pub sidebar_input_buffer: String,
 
     pub scroll: usize,
+    // for async / threading
+    pub ai_tx: UnboundedSender<ChatBranch>,
+    pub ai_rx: UnboundedReceiver<ChatBranch>,
+}
+
+impl ChatView {
+    /// helper to drain any finished AI responses
+    fn drain_ai(&mut self) -> anyhow::Result<()> {
+        while let Ok(updated) = self.ai_rx.try_recv() {
+            // overwrite our branch + messages
+            let idx = updated.id;
+            if idx < self.branches.len() {
+                // update in‐memory branch
+                self.branches[idx] = updated.clone();
+                // update what’s on screen
+                self.messages = Some(self.branches[idx].messages.clone());
+                // persist to disk
+                ChatBranch::save_all(&self.storage_path, &self.branches)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn iter_messages<'a>(messages: &'a [Message], lines: &mut Vec<Line<'a>>) {
@@ -270,6 +293,8 @@ impl CurrentScreen {
         let CurrentScreen::ChatView(chat) = self else {
             bail!("Not in chat view");
         };
+        chat.drain_ai()?;
+
         let storage_path = PathBuf::from("settings.json");
         let settings = AISettings::load_all(&storage_path).unwrap_or(AISettings {
             backend: AIBackend::OpenAI,
@@ -306,7 +331,7 @@ impl CurrentScreen {
             }
             KeyCode::Enter => {
                 if !chat.show_sidebar {
-                    let user_input = chat.input_buffer.trim();
+                    let user_input = chat.input_buffer.trim().to_string();
                     if !user_input.is_empty() {
                         chat.messages
                             .as_mut()
@@ -315,17 +340,36 @@ impl CurrentScreen {
                                 role: Role::User,
                                 content: user_input.to_string(),
                             });
-                        let content =
-                            match run_ai(chat.messages.as_deref(), user_input, &settings).await {
-                                Ok(reply) => reply,
-                                Err(e) => format!("AI Error: {e}"),
-                            };
+
+                        // ---- snapshot the branch state ----
+                        let mut branch_clone = chat.branches[chat.selected_branch].clone();
+
+                        // ---- spawn the real AI call in the background ----
+                        let tx = chat.ai_tx.clone();
+                        let settings_clone = settings.clone();
+                        tokio::spawn(async move {
+                            // call the LLM
+                            let history = Some(branch_clone.messages.as_slice());
+                            let ai_reply = run_ai(history, &user_input, &settings_clone)
+                                .await
+                                .unwrap_or_else(|e| format!("AI error: {}", e));
+
+                            // remove loading, push the real reply
+                            branch_clone.messages.pop(); // pop the "…Loading…"
+                            branch_clone.messages.push(Message {
+                                role: Role::Assistant,
+                                content: ai_reply.clone(),
+                            });
+
+                            // fire‐and‐forget send back to UI
+                            let _ = tx.send(branch_clone);
+                        });
                         chat.messages
                             .as_mut()
                             .context("No messages found")?
                             .push(Message {
                                 role: Role::Assistant,
-                                content,
+                                content: "Loading...".to_string(),
                             });
                         // persist back to branch
                         if let Some(branch) = chat.branches.get_mut(chat.selected_branch) {

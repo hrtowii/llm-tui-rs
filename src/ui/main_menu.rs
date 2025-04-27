@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 use std::path::PathBuf;
+use tokio::sync::mpsc::unbounded_channel;
 
 pub struct MainMenu {
     pub selected: usize,
@@ -70,6 +71,8 @@ impl CurrentScreen {
                 }
                 *self = match menu.selected {
                     0 => {
+                        let (ai_tx, ai_rx) = unbounded_channel::<ChatBranch>();
+
                         let mut chat_view = ChatView {
                             input_buffer: String::new(),
                             branches,
@@ -80,6 +83,8 @@ impl CurrentScreen {
                             sidebar_input_mode: None,
                             sidebar_input_buffer: String::new(),
                             scroll: 0,
+                            ai_tx,
+                            ai_rx,
                         };
                         // load messages for selected branch
                         chat_view.messages = Some(
